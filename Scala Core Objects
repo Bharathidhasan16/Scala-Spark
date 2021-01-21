@@ -1,0 +1,50 @@
+package com.inceptez.sparklearn
+
+// define (class) -> instantiate any number of times (reg. object) 
+// define + instantiate (Singleton object) -> executed (main method)
+object SparkCoreObj //extends App
+{
+def main(args:Array[String])
+  {
+  
+  val conf=new org.apache.spark.SparkConf().setAppName("WE35 Spark learning").setMaster("local[*]")
+  val sc=new org.apache.spark.SparkContext(conf);
+  //sc.setLogLevel("error)
+  val rdd1=sc.textFile("file:///home/hduser/custinfo");
+  val arr1=rdd1.collect
+  arr1.foreach(println)
+  val lines = sc.textFile("file:/home/hduser/sparkdata/empdata.txt")
+val lengths = lines.map (l => l.length)
+lengths.foreach(println)
+val lengths1 = lines.map(x=>x.split(",")).map(l => l.length)
+lengths1.foreach(println)
+val chennaiLines = lines.map(x=>x.split(",")).filter(l => l(1).toUpperCase=="CHENNAI" )
+val chennaiLines1 =chennaiLines.map(x=>(x(0),x(1),x(2).toInt))
+chennaiLines.collect.foreach(println)
+chennaiLines1.collect.foreach(println)
+
+// to convert from core to sql
+val sqlctx=new org.apache.spark.sql.SQLContext(sc);
+
+val df1=sqlctx.read.option("inferschema",true).option("header",true).csv("file:/home/hduser/empdata.txt")
+df1.select("name","city","amt").write.mode("overwrite").json("file:/home/hduser/jsondata/");
+  
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
