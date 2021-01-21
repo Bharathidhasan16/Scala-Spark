@@ -1,0 +1,264 @@
+package org.inceptez.spark.core
+
+import org.apache.spark.SparkConf
+import org.apache.spark.SparkContext
+import org.apache.spark.storage.StorageLevel._
+
+object corefunctions1  // instantiated class corefunctions1
+{
+  def mintrans(a:Double,b:Double):Double=
+  {
+    if (a < b) a else b    
+  }
+  
+  def cleanupper(a:String):String=
+  {
+    return(a.trim().toUpperCase())
+  }
+  
+  def rddminmaxsum(a:org.apache.spark.rdd.RDD[Double]):(Double,Double,Double)=
+  {return (a.min(),a.max(),a.sum())}
+  
+  
+  def main(args:Array[String])
+  {
+   //define spark configuration object
+    val conf = new SparkConf().setAppName("Local-sparkcore")//.setMaster("local[*]")
+   //define spark context object
+    val sc = new SparkContext(conf)
+    //val sqlctx=new org.apache.spark.sql.SQLContext(sc)
+    //Set the logger level to error
+   sc.setLogLevel("ERROR")
+
+   // Create a file rdd with 4 partitions
+
+   val rdd = sc.textFile("file:/home/hduser/hive/data/txns",4)
+   // create a hadoop rdd with 4 partitions 
+   // create the below dir in hadoop and place the file txns in the below dir
+   //hadoop fs -mkdir -p hive/data/
+   //hadoop fs -put -f ~/hive/data/txns hive/data/
+   
+   val hadooprdd = sc.textFile("hdfs://localhost:54310/user/hduser/hive/data/txns",4)
+   
+   println("Number of partition of the base file is " + rdd.getNumPartitions);
+   println("total number of lines in hadoop - " + hadooprdd.count)
+   println("print a sample of 20 rows with seed of 110 for dynamic data")
+   rdd.takeSample(true, 10, 110).foreach(println);
+   println("print only the first line of the dataset " );
+   println(rdd.first());
+   
+   // RDD(Array(Create, a, splitted, rdd, to, split, the), 
+   // Array(line, of, string, to, line, of, array))
+   val rddsplit=rdd.map(x=>x.split(","))
+
+////////////////////////////////////////////////////////////////////////////////////////////////////   
+   // filter only the category contains exercise or product starts with jumping.
+   val rddexerjump = rddsplit.filter(x => x(4).toUpperCase.contains("EXERCISE") || x(5).toUpperCase.startsWith("JUMP"))
+   val valexerjumpcnt= rddexerjump.count()
+
+   
+   println("Dynamically increase or decrease the number of partitions based on the volume of data")
+  println("Partition handling in Spark")
+  
+  //Try to convert this as a function
+ // volume of data varies on a daily basis, how do u improve the performance 
+
+  var rddexerjumpnew=sc.emptyRDD[Array[String]];
+  println(rddexerjumpnew.isEmpty())
+   
+  if (valexerjumpcnt > 0 && valexerjumpcnt <= 10000)  {
+    rddexerjumpnew=rddexerjump.coalesce(2);
+    println(s"Number of partition of the filtered data with $valexerjumpcnt count " + rddexerjumpnew.getNumPartitions);    
+  }   else if (valexerjumpcnt > 10001 && valexerjumpcnt < 50000)
+  {
+    rddexerjumpnew=rddexerjump.coalesce(3);
+    println(s"Number of partition of the filtered data with $valexerjumpcnt count " + rddexerjumpnew.getNumPartitions); 
+  }   else 
+  {
+    rddexerjumpnew=rddexerjump.repartition(6);  
+    println(s"Number of partition of the filtered data with $valexerjumpcnt count " + rddexerjumpnew.getNumPartitions); 
+  }
+  
+   val rddexerjumpcnt1=rddexerjumpnew.count();
+   println("Count the filtered rdd with new partition " + rddexerjumpcnt1)
+   println("Display only first row ")
+   rddexerjumpnew.take(1)
+   println(" Check whether the newrdd is empty true/false " + rddexerjumpnew.isEmpty())
+   println(" New RDD partition count " + rddexerjumpnew.getNumPartitions)
+   println(s"No of lines are $rddexerjumpcnt1 with exercise or jumping")
+//////////////////////////////////////////////////////////////////////////////////////////////   
+   
+   // Identify the non credit transactions alone
+   
+   val rddcredit = rddsplit.filter(x => !x.contains("credit"))
+   val rddcreditexact = rddsplit.filter(x => !x(8).contains("red"))
+   val rddcreditexactcredit = rddsplit.filter(x => x(8) != "credit")
+   val rddcreditexactcash = rddsplit.filter(x => x(8) == "cash")
+   val rddcreditexactcash1 = rddsplit.filter(x => x.equals("cash"))
+   
+   val cnt = rddcreditexact.count()
+  println(s"No of lines that does not contain Credit: $cnt" )
+
+//Requirement identify only California cash transactions and show me a report of sales - total, sum, min, max, average 
+  println(" Requirement identify only California cash transactions and show me a report of sales - total, sum, min, max, average ")
+  
+  println(" Transform the RDD with only California data who did cash transactions ")   
+   val rdd2 = rddsplit.filter(x => x(7) == "California" && x(8) == "cash")
+  
+   println(" Transform the RDD with taking only amount column ")
+   val rdd3 = rdd2.map(x => x(3).toDouble)
+   //rdd3=Array(32.65,10.01)
+
+   
+     println(" Caching of RDDs ")
+     rdd3.cache()
+     rdd3.unpersist()
+     
+     
+     //rdd3.persist(DISK_ONLY_2)
+     
+     val sumofsales = rdd3.sum()
+     println("Sum of Sales in california with cash: " + sumofsales)
+     
+     val sumofsalesreduce= rdd3.reduce((x,y)=>x+y);
+     //62.66
+     println("Sum of total Sales in california with cash using reduce : " + sumofsalesreduce)
+     
+     val sumofsalesreduce20dollar= rdd3.reduce((x,y)=>  if (y > 20.0) x+y else x  );
+     val sumofsalesreduce30dollar= rdd3.reduce((x,y)=>  if (y > 30.0) x+y else x  );
+     println("Sum of Sales where trans amount is > 20 dollar: " + sumofsalesreduce20dollar)
+     println("Sum of Sales where trans amount is > 30 dollar: " + sumofsalesreduce30dollar)
+     
+     println(" Lets try to achieve the same above functionality using filter")
+
+     val rddfilter3 = rdd2.filter(x=>x(3).toDouble>20.0).map(x => x(3).toDouble)
+     val sumofsalesfilterreduce= rddfilter3.reduce((x,y)=>x+y);
+     println("Sum of sales (using filter) where minimum trans amount is > 20 dollar: " + sumofsalesfilterreduce)
+     
+     val maxofsales = rdd3.max()
+     println("Max sales value : " + maxofsales)
+     
+     
+     val totalsales = rdd3.count()     
+     println("Total no fo sales: " + totalsales)
+       
+     val minofsales1 = rdd3.min
+
+     // Function based approach
+     val minmaxsumofsales = rddminmaxsum(rdd3)//(rdd3.min,rdd3.max,rdd3.sum)
+     println(" sales value computed using rddmin method which takes rdd as input and returns the min sales: " + minmaxsumofsales._1)
+     println("sales value computed using rddmin method which takes rdd as input and returns the max sales: " + minmaxsumofsales._2)
+     println("sales value computed using rddmin method which takes rdd as input and returns the sum sales: " + minmaxsumofsales._3)
+     
+     val avgofsales = minmaxsumofsales._3/rdd3.count()
+     println("Avg sales value : " + avgofsales)
+        
+     rdd3.unpersist();
+     
+ /////////////////////////////////////////////////////////////////////////////
+// Apply a function to every element of a row of the RDD
+     
+   val rddtrimupper=rddsplit.map(x=>(x(0),x(1),x(2),x(3),cleanupper(x(4))))
+   println(" Printing the sample data of the rddtrimupper applied trim and upper case on category using trimupcase udf")
+   val x=rddtrimupper.take(10)
+   x.foreach(println)
+
+   //val rddexerjump = rddsplit.filter(x => x(4).toUpperCase.contains("EXERCISE") || x(5).toUpperCase.startsWith("JUMP"))
+   println("Print only the non exercise and non jumping data set from the whole data")
+   val rddsplittuple = rddsplit.map(x=>(x(0),x(1),x(2),x(4),x(6)))
+   val rddexerjumpingtuple=rddexerjumpnew.map(x=>(x(0),x(1),x(2),x(4),x(6)))
+   val rddsubtract=rddsplittuple.subtract(rddexerjumpingtuple)
+   rddsubtract.take(10).foreach(println)
+   
+   //val rddunion2cols = rddunion.map(x=>(x._3,x._4))
+     val rddsubtractdistinct = rddsubtract.distinct
+     
+  println("Deduplicated count of subtracted rdd contains non exercise and jumping data  " + rddsubtractdistinct.count);
+  
+  println("City wise count : ")
+  
+  val rddkvpair=rddsplit.map(x=>((x(6)),(x(3).toDouble))) 
+  rddkvpair.countByKey().take(10).foreach(println)
+  
+  println("Transction wise count : ")
+  val rddcntbyval=rddsplit.map(x=>(x(8))) 
+  rddcntbyval.countByValue.take(10).foreach(println)
+  
+  println("City wise sum of amount : ")
+  rddkvpair.reduceByKey(_+_).take(10).foreach(println)
+  
+  println("City wise maximum amount of sales: ")
+  rddkvpair.reduceByKey((a,b)=> (if (a > b) a else b)).take(10).foreach(println)
+  
+  val rddcity=rddkvpair.reduceByKey((a,b)=> a+b)
+  //phidelphia,(10.1,10,20),baltimore,(10,20,30) -> (10.1,10,20).reduce(x,y=>x+y) -> (phidelphia,40.1)
+  //phidelphia -> 
+  rddcity.take(5).foreach(println)
+  
+   println("Brodcast real example")
+
+   println("Create a broadcast variable manually ")  
+   //driver
+   val kvpair: Map[String,Int] = Map("credit" -> 2, "cash" -> 0)
+
+   // kvpair - > ganaa.com (US)
+   // broadcastkvpair -> fm (AIR)
+   // workers
+   val broadcastkvpair=sc.broadcast(kvpair)
+   
+   val custrdd=sc.textFile("file:/home/hduser/hive/data/custs");
+  
+   custrdd.cache;
+   println("""Pass the key of the trans data spentby to the broadcast variable and get the 
+              respective value and sum with amount """)   
+   // for every row the kvpair in driver will be called
+   //val broadcastrdd=rddsplit.map(x=>(x(0),x(1),x(3).toDouble-kvpair(x(8))))
+   
+  //worker
+     val broadcastrdd=rddsplit.map(x=>(x(0),x(1),x(3).toDouble-broadcastkvpair.value(x(8))))
+   
+   broadcastrdd.take(4).foreach(println);
+   
+   
+   val custkvpair = custrdd.map(x => x.split(",")).filter(x=>x.length==5).map(x => (x(0),x(4))).collectAsMap
+   
+   val broadcastcustkvpair=sc.broadcast(custkvpair)
+   
+   println("""Load the custid,profession in a broadcast var and join with the transaction rdd to add the 
+            profession in the output""")
+   val broadcastcustrdd=rddsplit.map(x=>(x(0),x(8),broadcastcustkvpair.value(x(2))))
+   //broadcastcustkvpair.destroy()
+   broadcastcustrdd.take(4).foreach(println);
+  
+  println("Save the output to hadoop ")
+  
+  
+  
+  val fs = org.apache.hadoop.fs.FileSystem.get(new java.net.URI("hdfs://localhost:54310"),sc.hadoopConfiguration)
+  fs.delete(new org.apache.hadoop.fs.Path("/user/hduser/broadcastrdd"),true)
+  
+  broadcastrdd.saveAsTextFile("hdfs://localhost:54310/user/hduser/broadcastrdd")
+  
+  /// Join Scenario
+  
+  println("Join Scenario (join is not advisable in spark core)")
+  println("Create paired rdd to perform join from trans and cust data ")  
+  val transkvpair = rddsplit.map(x => (x(2),(x(0),x(1),x(3),x(5))))
+  transkvpair.cache;
+  
+  val custrddkvpair = custrdd.map(x => x.split(",")).map(x => (x(0),(x(2),x(3))))
+  println("Perform inner join ")    
+  val custtransjoin = transkvpair.join(custrddkvpair)
+  println("Map the required fields after joining ")    
+  val finaljoinrdd=custtransjoin.map(x=>(x._1,x._2._1._3))  
+  println("Print the required fields after joining ")
+  finaljoinrdd.take(10).foreach(println)
+  println("Writing the output to hdfs with the ~ delimiter using productiterator and mkstring")
+
+  fs.delete(new org.apache.hadoop.fs.Path("/user/hduser/joinedout/"),true)  
+  custtransjoin.map(x=>(x._1,x._2._1._3).productIterator.mkString("~")).saveAsTextFile("hdfs://localhost:54310//user/hduser/joinedout/")
+//custtransjoin.toDF().write.option("delimiter","|").csv("location")
+  }
+  
+  
+}
